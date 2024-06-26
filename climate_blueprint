@@ -60,42 +60,59 @@ trigger:
       - !input base_temperature_input
       - !input enable_automation_input
 
-condition:
-  - condition: state
-    entity_id: !input enable_automation_input
-    state: "on"
-
 action:
   - choose:
+      # When automation is enabled
       - conditions:
-          - condition: template
-            value_template: >
-              {{ states(temperature_sensor) | float > 
-                 (states(base_temperature_input) | float + upper_threshold) }}
+          - condition: state
+            entity_id: !input enable_automation_input
+            state: "on"
         sequence:
-          - service: climate.set_hvac_mode
-            target:
-              entity_id: !input climate_entity
-            data:
-              hvac_mode: cool
+          - choose:
+              # Temperature above threshold
+              - conditions:
+                  - condition: template
+                    value_template: >
+                      {{ states(temperature_sensor) | float > 
+                         (states(base_temperature_input) | float + upper_threshold) }}
+                sequence:
+                  - service: climate.set_hvac_mode
+                    target:
+                      entity_id: !input climate_entity
+                    data:
+                      hvac_mode: cool
+                  - service: climate.set_temperature
+                    target:
+                      entity_id: !input climate_entity
+                    data:
+                      temperature: "{{ states(base_temperature_input) | float }}"
+              # Temperature below threshold
+              - conditions:
+                  - condition: template
+                    value_template: >
+                      {{ states(temperature_sensor) | float < 
+                         (states(base_temperature_input) | float - lower_threshold) }}
+                sequence:
+                  - service: climate.set_hvac_mode
+                    target:
+                      entity_id: !input climate_entity
+                    data:
+                      hvac_mode: "off"
+          # Always update temperature when enabled
           - service: climate.set_temperature
             target:
               entity_id: !input climate_entity
             data:
               temperature: "{{ states(base_temperature_input) | float }}"
+      
+      # When automation is disabled
       - conditions:
-          - condition: template
-            value_template: >
-              {{ states(temperature_sensor) | float < 
-                 (states(base_temperature_input) | float - lower_threshold) }}
+          - condition: state
+            entity_id: !input enable_automation_input
+            state: "off"
         sequence:
           - service: climate.set_hvac_mode
             target:
               entity_id: !input climate_entity
             data:
               hvac_mode: "off"
-  - service: climate.set_temperature
-    target:
-      entity_id: !input climate_entity
-    data:
-      temperature: "{{ states(base_temperature_input) | float }}"
