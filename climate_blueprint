@@ -78,6 +78,11 @@ action:
               entity_id: !input climate_entity
             data:
               hvac_mode: cool
+          - service: climate.set_temperature
+            target:
+              entity_id: !input climate_entity
+            data:
+              temperature: "{{ states(base_temperature_input) | float }}"
       - conditions:
           - condition: template
             value_template: >
@@ -89,3 +94,8 @@ action:
               entity_id: !input climate_entity
             data:
               hvac_mode: "off"
+  - service: climate.set_temperature
+    target:
+      entity_id: !input climate_entity
+    data:
+      temperature: "{{ states(base_temperature_input) | float }}"
