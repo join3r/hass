@@ -1,5 +1,5 @@
 blueprint:
-  name: "Dynamic Temperature-based Climate Control"
+  name: "Flexible Temperature-based Climate Control"
   description: "Control a climate device based on temperature sensor readings with customizable thresholds and dynamic settings"
   domain: automation
   input:
@@ -15,7 +15,7 @@ blueprint:
           domain: sensor
           device_class: temperature
     base_temperature_input:
-      name: Base Temperature Input
+      name: Base Temperature Input Number
       description: "The input_number entity for base temperature"
       selector:
         entity:
@@ -39,7 +39,7 @@ blueprint:
           step: 0.5
           unit_of_measurement: "°C"
     enable_automation_input:
-      name: Enable Automation Input
+      name: Enable Automation Input Boolean
       description: "The input_boolean entity to enable or disable the automation"
       selector:
         entity:
