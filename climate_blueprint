@@ -1,6 +1,6 @@
 blueprint:
-  name: "Temperature-based Climate Control"
-  description: "Control a climate device based on temperature sensor readings with customizable thresholds"
+  name: "Dynamic Temperature-based Climate Control"
+  description: "Control a climate device based on temperature sensor readings with customizable thresholds and dynamic settings"
   domain: automation
   input:
     climate_entity:
@@ -14,15 +14,12 @@ blueprint:
         entity:
           domain: sensor
           device_class: temperature
-    base_temperature:
-      name: Base Temperature
-      description: "The base temperature to compare against"
+    base_temperature_input:
+      name: Base Temperature Input
+      description: "The input_number entity for base temperature"
       selector:
-        number:
-          min: 0
-          max: 40
-          step: 0.5
-          unit_of_measurement: "°C"
+        entity:
+          domain: input_number
     upper_threshold:
       name: Upper Threshold
       description: "Temperature difference above base to trigger cooling"
@@ -41,40 +38,44 @@ blueprint:
           max: 10
           step: 0.5
           unit_of_measurement: "°C"
-    enable_automation:
-      name: Enable Automation
-      description: "Toggle to enable or disable the automation"
+    enable_automation_input:
+      name: Enable Automation Input
+      description: "The input_boolean entity to enable or disable the automation"
       selector:
-        boolean:
+        entity:
+          domain: input_boolean
 
 variables:
   climate_entity: !input climate_entity
   temperature_sensor: !input temperature_sensor
-  base_temperature: !input base_temperature
+  base_temperature_input: !input base_temperature_input
   upper_threshold: !input upper_threshold
   lower_threshold: !input lower_threshold
-  enable_automation: !input enable_automation
+  enable_automation_input: !input enable_automation_input
 
 trigger:
   - platform: numeric_state
     entity_id: !input temperature_sensor
-    above: "{{ base_temperature + upper_threshold }}"
+    above: "{{ states(base_temperature_input) | float + upper_threshold }}"
   - platform: numeric_state
     entity_id: !input temperature_sensor
-    below: "{{ base_temperature - lower_threshold }}"
+    below: "{{ states(base_temperature_input) | float - lower_threshold }}"
   - platform: state
-    entity_id: !input enable_automation
+    entity_id: !input enable_automation_input
+  - platform: state
+    entity_id: !input base_temperature_input
 
 condition:
-  - condition: template
-    value_template: "{{ enable_automation }}"
+  - condition: state
+    entity_id: !input enable_automation_input
+    state: "on"
 
 action:
   - choose:
       - conditions:
           - condition: numeric_state
             entity_id: !input temperature_sensor
-            above: "{{ base_temperature + upper_threshold }}"
+            above: "{{ states(base_temperature_input) | float + upper_threshold }}"
         sequence:
           - service: climate.set_hvac_mode
             target:
@@ -84,7 +85,7 @@ action:
       - conditions:
           - condition: numeric_state
             entity_id: !input temperature_sensor
-            below: "{{ base_temperature - lower_threshold }}"
+            below: "{{ states(base_temperature_input) | float - lower_threshold }}"
         sequence:
           - service: climate.set_hvac_mode
             target:
