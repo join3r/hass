@@ -54,16 +54,11 @@ variables:
   enable_automation_input: !input enable_automation_input
 
 trigger:
-  - platform: numeric_state
-    entity_id: !input temperature_sensor
-    above: "{{ states(base_temperature_input) | float + upper_threshold }}"
-  - platform: numeric_state
-    entity_id: !input temperature_sensor
-    below: "{{ states(base_temperature_input) | float - lower_threshold }}"
   - platform: state
-    entity_id: !input enable_automation_input
-  - platform: state
-    entity_id: !input base_temperature_input
+    entity_id: 
+      - !input temperature_sensor
+      - !input base_temperature_input
+      - !input enable_automation_input
 
 condition:
   - condition: state
@@ -73,9 +68,10 @@ condition:
 action:
   - choose:
       - conditions:
-          - condition: numeric_state
-            entity_id: !input temperature_sensor
-            above: "{{ states(base_temperature_input) | float + upper_threshold }}"
+          - condition: template
+            value_template: >
+              {{ states(temperature_sensor) | float > 
+                 (states(base_temperature_input) | float + upper_threshold) }}
         sequence:
           - service: climate.set_hvac_mode
             target:
@@ -83,9 +79,10 @@ action:
             data:
               hvac_mode: cool
       - conditions:
-          - condition: numeric_state
-            entity_id: !input temperature_sensor
-            below: "{{ states(base_temperature_input) | float - lower_threshold }}"
+          - condition: template
+            value_template: >
+              {{ states(temperature_sensor) | float < 
+                 (states(base_temperature_input) | float - lower_threshold) }}
         sequence:
           - service: climate.set_hvac_mode
             target:
