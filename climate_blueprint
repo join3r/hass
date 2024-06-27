@@ -1,5 +1,5 @@
 blueprint:
-  name: "Efficient Temperature-based Climate Control with Sensor Safety"
+  name: "Simple Temperature-based Climate Control with Sensor Safety"
   description: "Control a climate device based on temperature sensor readings with customizable thresholds, dynamic settings, and safety features"
   domain: automation
   input:
@@ -45,14 +45,6 @@ blueprint:
         entity:
           domain: input_boolean
 
-variables:
-  climate_entity: !input climate_entity
-  temperature_sensor: !input temperature_sensor
-  base_temperature_input: !input base_temperature_input
-  upper_threshold: !input upper_threshold
-  lower_threshold: !input lower_threshold
-  enable_automation_input: !input enable_automation_input
-
 trigger:
   - platform: state
     entity_id: 
@@ -64,6 +56,8 @@ action:
   - variables:
       current_temp: "{{ states(temperature_sensor) | float }}"
       base_temp: "{{ states(base_temperature_input) | float }}"
+      upper_limit: "{{ base_temp + upper_threshold }}"
+      lower_limit: "{{ base_temp - lower_threshold }}"
   - choose:
       # When temperature sensor is unavailable
       - conditions:
@@ -86,14 +80,17 @@ action:
           - condition: state
             entity_id: !input enable_automation_input
             state: "on"
-          - condition: template
-            value_template: "{{ not is_state(temperature_sensor, 'unavailable') }}"
+          - condition: not
+            conditions:
+              - condition: state
+                entity_id: !input temperature_sensor
+                state: "unavailable"
         sequence:
           - choose:
-              # Temperature above threshold
+              # Temperature above upper limit
               - conditions:
                   - condition: template
-                    value_template: "{{ current_temp > (base_temp + upper_threshold) }}"
+                    value_template: "{{ current_temp > upper_limit }}"
                 sequence:
                   - service: climate.set_hvac_mode
                     target:
@@ -105,10 +102,10 @@ action:
                       entity_id: !input climate_entity
                     data:
                       temperature: "{{ base_temp }}"
-              # Temperature below threshold
+              # Temperature below lower limit
               - conditions:
                   - condition: template
-                    value_template: "{{ current_temp < (base_temp - lower_threshold) }}"
+                    value_template: "{{ current_temp < lower_limit }}"
                 sequence:
                   - service: climate.set_hvac_mode
                     target:
