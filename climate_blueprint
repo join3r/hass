@@ -1,6 +1,6 @@
 blueprint:
-  name: "Flexible Temperature-based Climate Control"
-  description: "Control a climate device based on temperature sensor readings with customizable thresholds and dynamic settings"
+  name: "Efficient Temperature-based Climate Control with Sensor Safety"
+  description: "Control a climate device based on temperature sensor readings with customizable thresholds, dynamic settings, and safety features"
   domain: automation
   input:
     climate_entity:
@@ -54,27 +54,55 @@ variables:
   enable_automation_input: !input enable_automation_input
 
 trigger:
+  - platform: numeric_state
+    entity_id: !input temperature_sensor
+    above: "{{ states(base_temperature_input) | float + upper_threshold }}"
+  - platform: numeric_state
+    entity_id: !input temperature_sensor
+    below: "{{ states(base_temperature_input) | float - lower_threshold }}"
   - platform: state
-    entity_id: 
-      - !input temperature_sensor
-      - !input base_temperature_input
-      - !input enable_automation_input
+    entity_id: !input enable_automation_input
+  - platform: state
+    entity_id: !input base_temperature_input
+  - platform: state
+    entity_id: !input temperature_sensor
+    to: "unavailable"
 
 action:
   - choose:
-      # When automation is enabled
+      # When temperature sensor is unavailable
+      - conditions:
+          - condition: state
+            entity_id: !input temperature_sensor
+            state: "unavailable"
+        sequence:
+          - service: climate.set_hvac_mode
+            target:
+              entity_id: !input climate_entity
+            data:
+              hvac_mode: "off"
+          - service: notify.persistent_notification
+            data:
+              message: "Climate control turned off due to unavailable temperature sensor."
+              title: "Climate Control Safety Alert"
+
+      # When automation is enabled and sensor is available
       - conditions:
           - condition: state
             entity_id: !input enable_automation_input
             state: "on"
+          - condition: not
+            conditions:
+              - condition: state
+                entity_id: !input temperature_sensor
+                state: "unavailable"
         sequence:
           - choose:
               # Temperature above threshold
               - conditions:
-                  - condition: template
-                    value_template: >
-                      {{ states(temperature_sensor) | float > 
-                         (states(base_temperature_input) | float + upper_threshold) }}
+                  - condition: numeric_state
+                    entity_id: !input temperature_sensor
+                    above: "{{ states(base_temperature_input) | float + upper_threshold }}"
                 sequence:
                   - service: climate.set_hvac_mode
                     target:
@@ -88,23 +116,16 @@ action:
                       temperature: "{{ states(base_temperature_input) | float }}"
               # Temperature below threshold
               - conditions:
-                  - condition: template
-                    value_template: >
-                      {{ states(temperature_sensor) | float < 
-                         (states(base_temperature_input) | float - lower_threshold) }}
+                  - condition: numeric_state
+                    entity_id: !input temperature_sensor
+                    below: "{{ states(base_temperature_input) | float - lower_threshold }}"
                 sequence:
                   - service: climate.set_hvac_mode
                     target:
                       entity_id: !input climate_entity
                     data:
                       hvac_mode: "off"
-          # Always update temperature when enabled
-          - service: climate.set_temperature
-            target:
-              entity_id: !input climate_entity
-            data:
-              temperature: "{{ states(base_temperature_input) | float }}"
-      
+
       # When automation is disabled
       - conditions:
           - condition: state
