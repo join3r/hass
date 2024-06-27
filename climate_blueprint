@@ -54,21 +54,16 @@ variables:
   enable_automation_input: !input enable_automation_input
 
 trigger:
-  - platform: numeric_state
-    entity_id: !input temperature_sensor
-    above: "{{ states(base_temperature_input) | float + upper_threshold }}"
-  - platform: numeric_state
-    entity_id: !input temperature_sensor
-    below: "{{ states(base_temperature_input) | float - lower_threshold }}"
   - platform: state
-    entity_id: !input enable_automation_input
-  - platform: state
-    entity_id: !input base_temperature_input
-  - platform: state
-    entity_id: !input temperature_sensor
-    to: "unavailable"
+    entity_id: 
+      - !input temperature_sensor
+      - !input base_temperature_input
+      - !input enable_automation_input
 
 action:
+  - variables:
+      current_temp: "{{ states(temperature_sensor) | float }}"
+      base_temp: "{{ states(base_temperature_input) | float }}"
   - choose:
       # When temperature sensor is unavailable
       - conditions:
@@ -91,18 +86,14 @@ action:
           - condition: state
             entity_id: !input enable_automation_input
             state: "on"
-          - condition: not
-            conditions:
-              - condition: state
-                entity_id: !input temperature_sensor
-                state: "unavailable"
+          - condition: template
+            value_template: "{{ not is_state(temperature_sensor, 'unavailable') }}"
         sequence:
           - choose:
               # Temperature above threshold
               - conditions:
-                  - condition: numeric_state
-                    entity_id: !input temperature_sensor
-                    above: "{{ states(base_temperature_input) | float + upper_threshold }}"
+                  - condition: template
+                    value_template: "{{ current_temp > (base_temp + upper_threshold) }}"
                 sequence:
                   - service: climate.set_hvac_mode
                     target:
@@ -113,12 +104,11 @@ action:
                     target:
                       entity_id: !input climate_entity
                     data:
-                      temperature: "{{ states(base_temperature_input) | float }}"
+                      temperature: "{{ base_temp }}"
               # Temperature below threshold
               - conditions:
-                  - condition: numeric_state
-                    entity_id: !input temperature_sensor
-                    below: "{{ states(base_temperature_input) | float - lower_threshold }}"
+                  - condition: template
+                    value_template: "{{ current_temp < (base_temp - lower_threshold) }}"
                 sequence:
                   - service: climate.set_hvac_mode
                     target:
