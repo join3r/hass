@@ -1,114 +1,134 @@
 blueprint:
-  name: "Basic Temperature-based Climate Control with Sensor Safety"
-  description: "Control a climate device based on temperature sensor readings with customizable thresholds, dynamic settings, and safety features"
+  name: Maintain room temperature with AC (no helpers, 0.5°C hysteresis)
+  description: >
+    Keeps room temperature using a temperature sensor and a climate (AC) entity.
+    No helpers are needed:
+      - Use the automation entity toggle in your dashboard to enable/disable control.
+      - Use the AC climate entity's target temperature as the setpoint (adjust it from a climate card).
+    Behavior:
+      - Turns AC OFF when room temperature ≤ (setpoint - 0.5 °C).
+      - Turns AC ON when room temperature ≥ setpoint, and sets AC to the desired HVAC mode.
   domain: automation
   input:
-    climate_entity:
-      name: Climate Device
-      selector:
-        entity:
-          domain: climate
-    temperature_sensor:
-      name: Temperature Sensor
+    temp_sensor:
+      name: Temperature sensor
+      description: Sensor measuring the room temperature (°C)
       selector:
         entity:
           domain: sensor
           device_class: temperature
-    base_temperature_input:
-      name: Base Temperature Input Number
-      description: "The input_number entity for base temperature"
+
+    climate_entity:
+      name: AC (climate)
+      description: The climate entity of your AC
       selector:
         entity:
-          domain: input_number
-    upper_threshold:
-      name: Upper Threshold
-      description: "Temperature difference above base to trigger cooling"
+          domain: climate
+
+    on_hvac_mode:
+      name: HVAC mode when ON
+      description: HVAC mode used when turning the AC ON (typically "cool")
+      default: cool
+      selector:
+        select:
+          options:
+            - cool
+            - auto
+            - dry
+            - fan_only
+
+    hysteresis:
+      name: Hysteresis (°C)
+      description: Difference below setpoint at which the AC turns OFF
+      default: 0.5
       selector:
         number:
-          min: 0
-          max: 10
-          step: 0.5
-          unit_of_measurement: "°C"
-    lower_threshold:
-      name: Lower Threshold
-      description: "Temperature difference below base to turn off climate"
-      selector:
-        number:
-          min: 0
-          max: 10
-          step: 0.5
-          unit_of_measurement: "°C"
-    enable_automation_input:
-      name: Enable Automation Input Boolean
-      description: "The input_boolean entity to enable or disable the automation"
-      selector:
-        entity:
-          domain: input_boolean
+          min: 0.2
+          max: 3.0
+          step: 0.1
+          unit_of_measurement: °C
+          mode: slider
+
+mode: restart
+max_exceeded: silent
 
 trigger:
-  - platform: state
-    entity_id: 
-      - !input temperature_sensor
-      - !input base_temperature_input
-      - !input enable_automation_input
+  - id: temp_change
+    platform: state
+    entity_id: !input temp_sensor
+
+  - id: setpoint_change_temperature
+    platform: state
+    entity_id: !input climate_entity
+    attribute: temperature
+
+  - id: setpoint_change_high
+    platform: state
+    entity_id: !input climate_entity
+    attribute: target_temp_high
+
+  - id: ha_start
+    platform: homeassistant
+    event: start
+
+  - id: periodic
+    platform: time_pattern
+    minutes: "/5"
+
+variables:
+  temp_entity: !input temp_sensor
+  climate_entity_var: !input climate_entity
+  hvac_mode_on: !input on_hvac_mode
+  hys: !input hysteresis
+
+  current_temp: "{{ states(temp_entity) | float(default=None) }}"
+
+  # Pick the climate's effective cooling setpoint:
+  # Prefer single setpoint 'temperature', else use 'target_temp_high' (heat_cool),
+  # else fall back to 'target_temp_low' if that's all we have.
+  setpoint: >-
+    {% set t  = state_attr(climate_entity_var, 'temperature') %}
+    {% set th = state_attr(climate_entity_var, 'target_temp_high') %}
+    {% set tl = state_attr(climate_entity_var, 'target_temp_low') %}
+    {{ (t if t is not none else th if th is not none else tl) | float(default=None) }}
+
+  values_ok: "{{ current_temp is not none and setpoint is not none }}"
+
+condition: []
 
 action:
   - choose:
-      # When temperature sensor is unavailable
       - conditions:
-          - condition: state
-            entity_id: !input temperature_sensor
-            state: "unavailable"
+          - condition: template
+            alias: Ensure sensor and setpoint are valid
+            value_template: "{{ values_ok }}"
+          - condition: template
+            alias: Room is at or below setpoint - hysteresis → turn OFF
+            value_template: "{{ current_temp <= (setpoint - hys) }}"
         sequence:
-          - service: climate.set_hvac_mode
+          - alias: Turn AC OFF (generic service for best compatibility)
+            service: climate.turn_off
             target:
               entity_id: !input climate_entity
-            data:
-              hvac_mode: "off"
-          - service: notify.persistent_notification
-            data:
-              message: "Climate control turned off due to unavailable temperature sensor."
-              title: "Climate Control Safety Alert"
 
-      # When automation is enabled and sensor is available
       - conditions:
-          - condition: state
-            entity_id: !input enable_automation_input
-            state: "on"
-          - condition: not
-            conditions:
-              - condition: state
-                entity_id: !input temperature_sensor
-                state: "unavailable"
+          - condition: template
+            alias: Ensure sensor and setpoint are valid
+            value_template: "{{ values_ok }}"
+          - condition: template
+            alias: Room at or above setpoint → turn ON
+            value_template: "{{ current_temp >= setpoint }}"
         sequence:
-          - service: climate.set_hvac_mode
+          - alias: Turn AC ON with selected mode
+            service: climate.set_hvac_mode
             target:
               entity_id: !input climate_entity
             data:
-              hvac_mode: >
-                {% set current_temp = states(temperature_sensor) | float %}
-                {% set base_temp = states(base_temperature_input) | float %}
-                {% if current_temp > (base_temp + upper_threshold) %}
-                  cool
-                {% elif current_temp < (base_temp - lower_threshold) %}
-                  off
-                {% else %}
-                  {{ states(climate_entity).attributes.hvac_mode }}
-                {% endif %}
-          - service: climate.set_temperature
+              hvac_mode: !input on_hvac_mode
+          - alias: Ensure target temperature matches the setpoint
+            service: climate.set_temperature
             target:
               entity_id: !input climate_entity
             data:
-              temperature: "{{ states(base_temperature_input) | float }}"
-
-      # When automation is disabled
-      - conditions:
-          - condition: state
-            entity_id: !input enable_automation_input
-            state: "off"
-        sequence:
-          - service: climate.set_hvac_mode
-            target:
-              entity_id: !input climate_entity
-            data:
-              hvac_mode: "off"
+              temperature: "{{ setpoint }}"
+    default: []
