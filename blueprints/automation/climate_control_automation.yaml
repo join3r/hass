@@ -1,0 +1,147 @@
+blueprint:
+  name: Climate Control Automation
+  description: Automatically control an air conditioner with heating capability based on temperature sensor readings
+  domain: automation
+  input:
+    climate_entity:
+      name: Climate Entity
+      description: The air conditioner/climate device to control (must support heating mode)
+      selector:
+        entity:
+          filter:
+            - domain: climate
+    temperature_sensor:
+      name: Temperature Sensor
+      description: The temperature sensor to monitor for automation triggers
+      selector:
+        entity:
+          filter:
+            - domain: sensor
+              device_class: temperature
+    min_temperature:
+      name: Minimum Temperature Threshold
+      description: Temperature below which heating should activate (°C or °F depending on your system)
+      default: 18
+      selector:
+        number:
+          min: 5
+          max: 35
+          step: 0.5
+          unit_of_measurement: "°"
+          mode: box
+    target_temperature:
+      name: Target/Desired Temperature
+      description: Temperature at which heating should deactivate (°C or °F depending on your system)
+      default: 22
+      selector:
+        number:
+          min: 10
+          max: 40
+          step: 0.5
+          unit_of_measurement: "°"
+          mode: box
+    active_start_time:
+      name: Active Start Time
+      description: Time when the automation should start being active each day
+      default: "09:00:00"
+      selector:
+        time:
+    active_end_time:
+      name: Active End Time
+      description: Time when the automation should stop being active each day
+      default: "21:00:00"
+      selector:
+        time:
+
+variables:
+  climate_entity: !input climate_entity
+  temperature_sensor: !input temperature_sensor
+  min_temperature: !input min_temperature
+  target_temperature: !input target_temperature
+  active_start_time: !input active_start_time
+  active_end_time: !input active_end_time
+
+trigger:
+  # Trigger when temperature drops below minimum threshold for 30 minutes
+  - id: "temperature_low"
+    platform: numeric_state
+    entity_id: !input temperature_sensor
+    below: !input min_temperature
+    for:
+      minutes: 30
+  # Trigger when temperature reaches or exceeds target temperature for 15 minutes
+  - id: "temperature_high"
+    platform: numeric_state
+    entity_id: !input temperature_sensor
+    above: !input target_temperature
+    for:
+      minutes: 15
+
+condition:
+  # Ensure the temperature sensor is available
+  - condition: not
+    conditions:
+      - condition: state
+        entity_id: !input temperature_sensor
+        state:
+          - "unavailable"
+          - "unknown"
+  # Only active during specified time range
+  - condition: time
+    after: !input active_start_time
+    before: !input active_end_time
+
+action:
+  - choose:
+      # When temperature is low, turn on heating
+      - conditions:
+          - condition: trigger
+            id: "temperature_low"
+          # Additional check to ensure climate entity is available
+          - condition: not
+            conditions:
+              - condition: state
+                entity_id: !input climate_entity
+                state: 
+                  - "unavailable"
+                  - "unknown"
+        sequence:
+          - action: climate.set_temperature
+            target:
+              entity_id: !input climate_entity
+            data:
+              temperature: !input target_temperature
+              hvac_mode: heat
+          - action: logbook.log
+            data:
+              name: "Climate Control Automation"
+              message: >
+                Heating activated: Temperature {{ states(temperature_sensor) }}° dropped below {{ min_temperature }}° for 30 minutes.
+                Set {{ climate_entity }} to heat mode with target {{ target_temperature }}°.
+                (Active time: {{ active_start_time }} - {{ active_end_time }})
+      
+      # When temperature is high, turn off heating
+      - conditions:
+          - condition: trigger
+            id: "temperature_high"
+          # Additional check to ensure climate entity is available
+          - condition: not
+            conditions:
+              - condition: state
+                entity_id: !input climate_entity
+                state: 
+                  - "unavailable"
+                  - "unknown"
+        sequence:
+          - action: climate.turn_off
+            target:
+              entity_id: !input climate_entity
+          - action: logbook.log
+            data:
+              name: "Climate Control Automation"
+              message: >
+                Heating deactivated: Temperature {{ states(temperature_sensor) }}° reached {{ target_temperature }}° for 15 minutes.
+                Turned off {{ climate_entity }}.
+                (Active time: {{ active_start_time }} - {{ active_end_time }})
+
+mode: single
