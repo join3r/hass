@@ -52,6 +52,58 @@ blueprint:
       default: "21:00:00"
       selector:
         time:
+    active_days:
+      name: Active Days
+      description: Days of the week when the automation should be active
+      default:
+        - mon
+        - tue
+        - wed
+        - thu
+        - fri
+        - sat
+        - sun
+      selector:
+        select:
+          multiple: true
+          mode: dropdown
+          options:
+            - label: Monday
+              value: mon
+            - label: Tuesday
+              value: tue
+            - label: Wednesday
+              value: wed
+            - label: Thursday
+              value: thu
+            - label: Friday
+              value: fri
+            - label: Saturday
+              value: sat
+            - label: Sunday
+              value: sun
+    heating_delay:
+      name: Heating Activation Delay
+      description: How long the temperature must stay below minimum before activating heating
+      default: 30
+      selector:
+        number:
+          min: 1
+          max: 120
+          step: 1
+          unit_of_measurement: "minutes"
+          mode: box
+    heating_duration:
+      name: Heating Duration After Target Reached
+      description: How long to keep heating on after reaching the target temperature
+      default: 15
+      selector:
+        number:
+          min: 0
+          max: 120
+          step: 1
+          unit_of_measurement: "minutes"
+          mode: box
 
 variables:
   climate_entity: !input climate_entity
@@ -60,22 +112,25 @@ variables:
   target_temperature: !input target_temperature
   active_start_time: !input active_start_time
   active_end_time: !input active_end_time
+  active_days: !input active_days
+  heating_delay: !input heating_delay
+  heating_duration: !input heating_duration
 
 trigger:
-  # Trigger when temperature drops below minimum threshold for 30 minutes
+  # Trigger when temperature drops below minimum threshold for configured delay
   - id: "temperature_low"
     platform: numeric_state
     entity_id: !input temperature_sensor
     below: !input min_temperature
     for:
-      minutes: 30
-  # Trigger when temperature reaches or exceeds target temperature for 15 minutes
+      minutes: !input heating_delay
+  # Trigger when temperature reaches or exceeds target temperature for configured duration
   - id: "temperature_high"
     platform: numeric_state
     entity_id: !input temperature_sensor
     above: !input target_temperature
     for:
-      minutes: 15
+      minutes: !input heating_duration
 
 condition:
   # Ensure the temperature sensor is available
@@ -86,10 +141,11 @@ condition:
         state:
           - "unavailable"
           - "unknown"
-  # Only active during specified time range
+  # Only active during specified time range and days
   - condition: time
     after: !input active_start_time
     before: !input active_end_time
+    weekday: !input active_days
 
 action:
   - choose:
@@ -116,9 +172,9 @@ action:
             data:
               name: "Climate Control Automation"
               message: >
-                Heating activated: Temperature {{ states(temperature_sensor) }}° dropped below {{ min_temperature }}° for 30 minutes.
+                Heating activated: Temperature {{ states(temperature_sensor) }}° dropped below {{ min_temperature }}° for {{ heating_delay }} minutes.
                 Set {{ climate_entity }} to heat mode with target {{ target_temperature }}°.
-                (Active time: {{ active_start_time }} - {{ active_end_time }})
+                (Active: {{ active_start_time }} - {{ active_end_time }}, Days: {{ active_days | join(', ') }})
       
       # When temperature is high, turn off heating
       - conditions:
@@ -140,8 +196,8 @@ action:
             data:
               name: "Climate Control Automation"
               message: >
-                Heating deactivated: Temperature {{ states(temperature_sensor) }}° reached {{ target_temperature }}° for 15 minutes.
+                Heating deactivated: Temperature {{ states(temperature_sensor) }}° reached {{ target_temperature }}° for {{ heating_duration }} minutes.
                 Turned off {{ climate_entity }}.
-                (Active time: {{ active_start_time }} - {{ active_end_time }})
+                (Active: {{ active_start_time }} - {{ active_end_time }}, Days: {{ active_days | join(', ') }})
 
 mode: single
