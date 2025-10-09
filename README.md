@@ -69,8 +69,9 @@ This repository contains a Home Assistant blueprint for automatically controllin
   - Logs the action to the Home Assistant logbook
 
 ### Heating Deactivation
-- When temperature reaches or exceeds the target temperature AND stays there for the configured duration (default: 15 minutes):
-  - Turns off the climate entity
+- When temperature reaches or exceeds the target temperature:
+  - Continues heating for the configured duration (default: 15 minutes)
+  - After the duration expires, turns off the climate entity
   - Logs the action to the Home Assistant logbook
 
 ### Safety Features

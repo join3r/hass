@@ -124,13 +124,11 @@ trigger:
     below: !input min_temperature
     for:
       minutes: !input heating_delay
-  # Trigger when temperature reaches or exceeds target temperature for configured duration
-  - id: "temperature_high"
+  # Trigger when temperature reaches target temperature (to start the duration timer)
+  - id: "temperature_reached"
     platform: numeric_state
     entity_id: !input temperature_sensor
     above: !input target_temperature
-    for:
-      minutes: !input heating_duration
 
 condition:
   # Ensure the temperature sensor is available
@@ -176,19 +174,27 @@ action:
                 Set {{ climate_entity }} to heat mode with target {{ target_temperature }}°.
                 (Active: {{ active_start_time }} - {{ active_end_time }}, Days: {{ active_days | join(', ') }})
       
-      # When temperature is high, turn off heating
+      # When temperature reaches target, wait for duration then turn off heating
       - conditions:
           - condition: trigger
-            id: "temperature_high"
+            id: "temperature_reached"
           # Additional check to ensure climate entity is available
           - condition: not
             conditions:
               - condition: state
                 entity_id: !input climate_entity
-                state: 
+                state:
                   - "unavailable"
                   - "unknown"
+          # Check that climate is currently in heat mode (only turn off if it's heating)
+          - condition: state
+            entity_id: !input climate_entity
+            state: heat
         sequence:
+          # Wait for the configured duration after reaching target temperature
+          - delay:
+              minutes: !input heating_duration
+          # Turn off heating after the delay
           - action: climate.turn_off
             target:
               entity_id: !input climate_entity
@@ -196,8 +202,8 @@ action:
             data:
               name: "Climate Control Automation"
               message: >
-                Heating deactivated: Temperature {{ states(temperature_sensor) }}° reached {{ target_temperature }}° for {{ heating_duration }} minutes.
-                Turned off {{ climate_entity }}.
+                Heating deactivated: Temperature {{ states(temperature_sensor) }}° reached {{ target_temperature }}°.
+                Kept heating on for {{ heating_duration }} minutes, then turned off {{ climate_entity }}.
                 (Active: {{ active_start_time }} - {{ active_end_time }}, Days: {{ active_days | join(', ') }})
 
 mode: single

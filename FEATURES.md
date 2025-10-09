@@ -53,12 +53,13 @@ A comprehensive Home Assistant blueprint for intelligent climate control with ex
 5. Sets target temperature
 6. Logs detailed action to Home Assistant logbook
 
-#### When Temperature Rises
-1. Waits for configured duration after reaching target
+#### When Temperature Reaches Target
+1. Detects when temperature reaches or exceeds target
 2. Checks if within active schedule (time + days)
-3. Verifies climate entity is available
-4. Turns off climate entity
-5. Logs detailed action to Home Assistant logbook
+3. Verifies climate entity is available and in heat mode
+4. Continues heating for configured duration (allows temperature to stabilize)
+5. After duration expires, turns off climate entity
+6. Logs detailed action to Home Assistant logbook
 
 ### 🛡️ Safety Features
 - **Sensor Availability Check**: Won't act if temperature sensor is unavailable/unknown
