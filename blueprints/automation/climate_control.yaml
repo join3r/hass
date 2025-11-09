@@ -50,6 +50,12 @@ trigger:
     entity_id: !input temperature_sensor
     above: !input target_temperature
     id: "temp_high"
+  - platform: homeassistant
+    event: start
+    id: "ha_start"
+  - platform: event
+    event_type: automation_reloaded
+    id: "automation_reloaded"
 
 action:
   - choose:
@@ -64,7 +70,7 @@ action:
             data:
               temperature: !input target_temperature
               hvac_mode: heat
-      
+
       # Temperature reached target - stop heating
       - conditions:
           - condition: trigger
@@ -73,5 +79,37 @@ action:
           - service: climate.turn_off
             target:
               entity_id: !input climate_entity
+
+      # On HA start or automation reload - check current state
+      - conditions:
+          - condition: or
+            conditions:
+              - condition: trigger
+                id: "ha_start"
+              - condition: trigger
+                id: "automation_reloaded"
+        sequence:
+          - choose:
+              # If temperature is below minimum, start heating
+              - conditions:
+                  - condition: numeric_state
+                    entity_id: !input temperature_sensor
+                    below: !input min_temperature
+                sequence:
+                  - service: climate.set_temperature
+                    target:
+                      entity_id: !input climate_entity
+                    data:
+                      temperature: !input target_temperature
+                      hvac_mode: heat
+              # If temperature is above target, stop heating
+              - conditions:
+                  - condition: numeric_state
+                    entity_id: !input temperature_sensor
+                    above: !input target_temperature
+                sequence:
+                  - service: climate.turn_off
+                    target:
+                      entity_id: !input climate_entity
 
 mode: single
