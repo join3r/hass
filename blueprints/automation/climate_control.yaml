@@ -1,0 +1,77 @@
+blueprint:
+  name: Simple Climate Control Automation
+  description: Start AC heating when temperature drops below threshold, stop when target temperature is reached
+  domain: automation
+  input:
+    climate_entity:
+      name: Climate Entity
+      description: The air conditioner/climate device to control
+      selector:
+        entity:
+          filter:
+            - domain: climate
+    temperature_sensor:
+      name: Temperature Sensor
+      description: The temperature sensor to monitor
+      selector:
+        entity:
+          filter:
+            - domain: sensor
+              device_class: temperature
+    min_temperature:
+      name: Minimum Temperature Threshold
+      description: When temperature drops below this, start heating
+      default: 20
+      selector:
+        number:
+          min: 5
+          max: 35
+          step: 0.5
+          unit_of_measurement: "°"
+          mode: box
+    target_temperature:
+      name: Target Temperature
+      description: Heat to this temperature, then stop
+      default: 22
+      selector:
+        number:
+          min: 10
+          max: 40
+          step: 0.5
+          unit_of_measurement: "°"
+          mode: box
+
+trigger:
+  - platform: numeric_state
+    entity_id: !input temperature_sensor
+    below: !input min_temperature
+    id: "temp_low"
+  - platform: numeric_state
+    entity_id: !input temperature_sensor
+    above: !input target_temperature
+    id: "temp_high"
+
+action:
+  - choose:
+      # Temperature dropped below minimum - start heating
+      - conditions:
+          - condition: trigger
+            id: "temp_low"
+        sequence:
+          - service: climate.set_temperature
+            target:
+              entity_id: !input climate_entity
+            data:
+              temperature: !input target_temperature
+              hvac_mode: heat
+      
+      # Temperature reached target - stop heating
+      - conditions:
+          - condition: trigger
+            id: "temp_high"
+        sequence:
+          - service: climate.turn_off
+            target:
+              entity_id: !input climate_entity
+
+mode: single
