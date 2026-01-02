@@ -68,6 +68,18 @@ blueprint:
               value: dry
             - label: Fan Only
               value: fan_only
+    time_start:
+      name: Start Time
+      description: Time when automation becomes active (leave default 00:00 for always active)
+      default: "00:00:00"
+      selector:
+        time:
+    time_end:
+      name: End Time
+      description: Time when automation stops being active (leave default 00:00 for always active)
+      default: "00:00:00"
+      selector:
+        time:
 
 trigger:
   - platform: numeric_state
@@ -84,6 +96,27 @@ trigger:
   - platform: event
     event_type: automation_reloaded
     id: "automation_reloaded"
+  - platform: time
+    at: !input time_end
+    id: "time_window_ended"
+
+variables:
+  time_start_var: !input time_start
+  time_end_var: !input time_end
+
+condition:
+  - condition: or
+    conditions:
+      # Always allow if both times are set to midnight (disabled)
+      - condition: template
+        value_template: "{{ time_start_var == '00:00:00' and time_end_var == '00:00:00' }}"
+      # Allow time_window_ended trigger to bypass time check
+      - condition: trigger
+        id: "time_window_ended"
+      # Otherwise check if current time is within the window
+      - condition: time
+        after: !input time_start
+        before: !input time_end
 
 action:
   - choose:
@@ -103,6 +136,18 @@ action:
       - conditions:
           - condition: trigger
             id: "temp_high"
+        sequence:
+          - service: climate.turn_off
+            target:
+              entity_id: !input climate_entity
+
+      # Time window ended - turn off AC
+      - conditions:
+          - condition: trigger
+            id: "time_window_ended"
+          # Only if time scheduling is enabled (not both 00:00)
+          - condition: template
+            value_template: "{{ not (time_start_var == '00:00:00' and time_end_var == '00:00:00') }}"
         sequence:
           - service: climate.turn_off
             target:
