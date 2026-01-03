@@ -99,6 +99,9 @@ trigger:
   - platform: time
     at: !input time_end
     id: "time_window_ended"
+  - platform: time
+    at: !input time_start
+    id: "time_window_started"
 
 variables:
   time_start_var: !input time_start
@@ -110,9 +113,11 @@ condition:
       # Always allow if both times are set to midnight (disabled)
       - condition: template
         value_template: "{{ time_start_var == '00:00:00' and time_end_var == '00:00:00' }}"
-      # Allow time_window_ended trigger to bypass time check
+      # Allow time triggers to bypass time check
       - condition: trigger
         id: "time_window_ended"
+      - condition: trigger
+        id: "time_window_started"
       # Otherwise check if current time is within the window
       - condition: time
         after: !input time_start
@@ -152,6 +157,25 @@ action:
           - service: climate.turn_off
             target:
               entity_id: !input climate_entity
+
+      # Time window started - check if AC should turn on
+      - conditions:
+          - condition: trigger
+            id: "time_window_started"
+          # Only if time scheduling is enabled (not both 00:00)
+          - condition: template
+            value_template: "{{ not (time_start_var == '00:00:00' and time_end_var == '00:00:00') }}"
+          # Only if temperature is below minimum
+          - condition: numeric_state
+            entity_id: !input temperature_sensor
+            below: !input min_temperature
+        sequence:
+          - service: climate.set_temperature
+            target:
+              entity_id: !input climate_entity
+            data:
+              temperature: !input ac_temperature
+              hvac_mode: !input ac_mode
 
       # On HA start or automation reload - check current state
       - conditions:
