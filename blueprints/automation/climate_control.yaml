@@ -80,6 +80,28 @@ blueprint:
       default: "00:00:00"
       selector:
         time:
+    active_days:
+      name: Active Days
+      description: Days of the week when automation is active (select none for all days)
+      default: []
+      selector:
+        select:
+          multiple: true
+          options:
+            - label: Monday
+              value: mon
+            - label: Tuesday
+              value: tue
+            - label: Wednesday
+              value: wed
+            - label: Thursday
+              value: thu
+            - label: Friday
+              value: fri
+            - label: Saturday
+              value: sat
+            - label: Sunday
+              value: sun
 
 trigger:
   - platform: numeric_state
@@ -102,26 +124,39 @@ trigger:
   - platform: time
     at: !input time_start
     id: "time_window_started"
+  - platform: time
+    at: "00:00:00"
+    id: "day_changed"
 
 variables:
   time_start_var: !input time_start
   time_end_var: !input time_end
+  active_days_var: !input active_days
+  scheduling_disabled: "{{ time_start_var == '00:00:00' and time_end_var == '00:00:00' and active_days_var | length == 0 }}"
+  current_day: "{{ now().strftime('%a') | lower }}"
+  is_active_day: "{{ active_days_var | length == 0 or current_day in active_days_var }}"
 
 condition:
   - condition: or
     conditions:
-      # Always allow if both times are set to midnight (disabled)
+      # Always allow if scheduling is disabled (both times 00:00 and no days selected)
       - condition: template
-        value_template: "{{ time_start_var == '00:00:00' and time_end_var == '00:00:00' }}"
-      # Allow time triggers to bypass time check
+        value_template: "{{ scheduling_disabled }}"
+      # Allow time triggers to bypass time check (they handle their own logic)
       - condition: trigger
         id: "time_window_ended"
       - condition: trigger
         id: "time_window_started"
-      # Otherwise check if current time is within the window
-      - condition: time
-        after: !input time_start
-        before: !input time_end
+      - condition: trigger
+        id: "day_changed"
+      # Otherwise check if current time and day are within the window
+      - condition: and
+        conditions:
+          - condition: time
+            after: !input time_start
+            before: !input time_end
+          - condition: template
+            value_template: "{{ is_active_day }}"
 
 action:
   - choose:
@@ -150,9 +185,9 @@ action:
       - conditions:
           - condition: trigger
             id: "time_window_ended"
-          # Only if time scheduling is enabled (not both 00:00)
+          # Only if scheduling is enabled and it's an active day
           - condition: template
-            value_template: "{{ not (time_start_var == '00:00:00' and time_end_var == '00:00:00') }}"
+            value_template: "{{ not scheduling_disabled and is_active_day }}"
         sequence:
           - service: climate.turn_off
             target:
@@ -162,9 +197,9 @@ action:
       - conditions:
           - condition: trigger
             id: "time_window_started"
-          # Only if time scheduling is enabled (not both 00:00)
+          # Only if scheduling is enabled and it's an active day
           - condition: template
-            value_template: "{{ not (time_start_var == '00:00:00' and time_end_var == '00:00:00') }}"
+            value_template: "{{ not scheduling_disabled and is_active_day }}"
           # Only if temperature is below minimum
           - condition: numeric_state
             entity_id: !input temperature_sensor
@@ -176,6 +211,38 @@ action:
             data:
               temperature: !input ac_temperature
               hvac_mode: !input ac_mode
+
+      # Day changed at midnight - check if new day requires action
+      - conditions:
+          - condition: trigger
+            id: "day_changed"
+          # Only if day-based scheduling is enabled
+          - condition: template
+            value_template: "{{ active_days_var | length > 0 }}"
+        sequence:
+          - choose:
+              # New day is active and temp is below minimum - turn on AC
+              - conditions:
+                  - condition: template
+                    value_template: "{{ is_active_day }}"
+                  - condition: numeric_state
+                    entity_id: !input temperature_sensor
+                    below: !input min_temperature
+                sequence:
+                  - service: climate.set_temperature
+                    target:
+                      entity_id: !input climate_entity
+                    data:
+                      temperature: !input ac_temperature
+                      hvac_mode: !input ac_mode
+              # New day is inactive - turn off AC
+              - conditions:
+                  - condition: template
+                    value_template: "{{ not is_active_day }}"
+                sequence:
+                  - service: climate.turn_off
+                    target:
+                      entity_id: !input climate_entity
 
       # On HA start or automation reload - check current state
       - conditions:
