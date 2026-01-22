@@ -132,9 +132,15 @@ variables:
   time_start_var: !input time_start
   time_end_var: !input time_end
   active_days_var: !input active_days
+  temperature_sensor_var: !input temperature_sensor
+  min_temperature_var: !input min_temperature
+  target_temperature_var: !input target_temperature
   scheduling_disabled: "{{ time_start_var == '00:00:00' and time_end_var == '00:00:00' and active_days_var | length == 0 }}"
   current_day: "{{ now().strftime('%a') | lower }}"
   is_active_day: "{{ active_days_var | length == 0 or current_day in active_days_var }}"
+  current_temp: "{{ states(temperature_sensor_var) | float(0) }}"
+  temp_below_min: "{{ current_temp < min_temperature_var }}"
+  temp_above_target: "{{ current_temp > target_temperature_var }}"
 
 condition:
   - condition: or
@@ -201,9 +207,8 @@ action:
           - condition: template
             value_template: "{{ not scheduling_disabled and is_active_day }}"
           # Only if temperature is below minimum
-          - condition: numeric_state
-            entity_id: !input temperature_sensor
-            below: !input min_temperature
+          - condition: template
+            value_template: "{{ temp_below_min }}"
         sequence:
           - service: climate.set_temperature
             target:
@@ -212,37 +217,17 @@ action:
               temperature: !input ac_temperature
               hvac_mode: !input ac_mode
 
-      # Day changed at midnight - check if new day requires action
+      # Day changed at midnight - turn off AC if new day is inactive
       - conditions:
           - condition: trigger
             id: "day_changed"
-          # Only if day-based scheduling is enabled
+          # Only if day-based scheduling is enabled and new day is inactive
           - condition: template
-            value_template: "{{ active_days_var | length > 0 }}"
+            value_template: "{{ active_days_var | length > 0 and not is_active_day }}"
         sequence:
-          - choose:
-              # New day is active and temp is below minimum - turn on AC
-              - conditions:
-                  - condition: template
-                    value_template: "{{ is_active_day }}"
-                  - condition: numeric_state
-                    entity_id: !input temperature_sensor
-                    below: !input min_temperature
-                sequence:
-                  - service: climate.set_temperature
-                    target:
-                      entity_id: !input climate_entity
-                    data:
-                      temperature: !input ac_temperature
-                      hvac_mode: !input ac_mode
-              # New day is inactive - turn off AC
-              - conditions:
-                  - condition: template
-                    value_template: "{{ not is_active_day }}"
-                sequence:
-                  - service: climate.turn_off
-                    target:
-                      entity_id: !input climate_entity
+          - service: climate.turn_off
+            target:
+              entity_id: !input climate_entity
 
       # On HA start or automation reload - check current state
       - conditions:
@@ -254,11 +239,10 @@ action:
                 id: "automation_reloaded"
         sequence:
           - choose:
-              # If temperature is below minimum, start AC
+              # If temperature is below minimum and scheduling allows, start AC
               - conditions:
-                  - condition: numeric_state
-                    entity_id: !input temperature_sensor
-                    below: !input min_temperature
+                  - condition: template
+                    value_template: "{{ temp_below_min and (scheduling_disabled or is_active_day) }}"
                 sequence:
                   - service: climate.set_temperature
                     target:
@@ -268,9 +252,8 @@ action:
                       hvac_mode: !input ac_mode
               # If temperature is above target, stop heating
               - conditions:
-                  - condition: numeric_state
-                    entity_id: !input temperature_sensor
-                    above: !input target_temperature
+                  - condition: template
+                    value_template: "{{ temp_above_target }}"
                 sequence:
                   - service: climate.turn_off
                     target:
