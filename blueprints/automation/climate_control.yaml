@@ -135,12 +135,27 @@ variables:
   temperature_sensor_var: !input temperature_sensor
   min_temperature_var: !input min_temperature
   target_temperature_var: !input target_temperature
+  # Scheduling is fully disabled when both times are 00:00 and no days are selected.
   scheduling_disabled: "{{ time_start_var == '00:00:00' and time_end_var == '00:00:00' and active_days_var | length == 0 }}"
+  # Treat matching start/end times as an "all day" window (e.g., 00:00 -> 00:00).
+  time_window_disabled: "{{ time_start_var == time_end_var }}"
   current_day: "{{ now().strftime('%a') | lower }}"
   is_active_day: "{{ active_days_var | length == 0 or current_day in active_days_var }}"
   current_temp: "{{ states(temperature_sensor_var) | float(0) }}"
   temp_below_min: "{{ current_temp < min_temperature_var }}"
   temp_above_target: "{{ current_temp > target_temperature_var }}"
+  # Compute time window in template to support overnight ranges (e.g., 22:00 -> 06:00).
+  is_within_time_window: >-
+    {% set start = today_at(time_start_var) %}
+    {% set end = today_at(time_end_var) %}
+    {% set now_ts = now() %}
+    {% if time_window_disabled %}
+      true
+    {% elif start < end %}
+      {{ start <= now_ts and now_ts <= end }}
+    {% else %}
+      {{ now_ts >= start or now_ts <= end }}
+    {% endif %}
 
 condition:
   - condition: or
@@ -158,9 +173,9 @@ condition:
       # Otherwise check if current time and day are within the window
       - condition: and
         conditions:
-          - condition: time
-            after: !input time_start
-            before: !input time_end
+          # Use template to allow overnight windows and "all day" schedules.
+          - condition: template
+            value_template: "{{ is_within_time_window }}"
           - condition: template
             value_template: "{{ is_active_day }}"
 
@@ -206,6 +221,9 @@ action:
           # Only if scheduling is enabled and it's an active day
           - condition: template
             value_template: "{{ not scheduling_disabled and is_active_day }}"
+          # Only if the time window is not disabled (avoids redundant midnight trigger)
+          - condition: template
+            value_template: "{{ not time_window_disabled }}"
           # Only if temperature is below minimum
           - condition: template
             value_template: "{{ temp_below_min }}"
@@ -242,7 +260,7 @@ action:
               # If temperature is below minimum and scheduling allows, start AC
               - conditions:
                   - condition: template
-                    value_template: "{{ temp_below_min and (scheduling_disabled or is_active_day) }}"
+                    value_template: "{{ temp_below_min and (scheduling_disabled or (is_active_day and is_within_time_window)) }}"
                 sequence:
                   - service: climate.set_temperature
                     target:

@@ -20,10 +20,11 @@
 
 6. **AC Mode** (default: Heat)
    - **Heat** - Heating mode
-   - **Cool** - Cooling mode
    - **Heat/Cool (Auto)** - Automatic mode
    - **Dry** - Dehumidification mode
    - **Fan Only** - Fan without heating/cooling
+   
+**Important:** This blueprint is **heating-only**. It turns **on** when the room temperature drops below the minimum threshold and turns **off** when the room temperature rises above the target.
 
 ## Example Configurations
 
@@ -41,23 +42,7 @@ AC Mode: Heat
 - Room temperature drops to 22.4°C → AC turns ON in Heat mode, set to 26°C
 - Room temperature rises to 24.1°C → AC turns OFF
 
-### Example 2: Summer Cooling
-```yaml
-Climate Entity: climate.living_room_ac
-Temperature Sensor: sensor.living_room_temperature
-Minimum Temperature Threshold: 18°C
-Target Temperature: 26°C
-AC Set Temperature: 22°C
-AC Mode: Cool
-```
-
-**How it works:**
-- Room temperature rises to 26.1°C → AC turns ON in Cool mode, set to 22°C
-- Room temperature drops to 17.9°C → AC turns OFF
-
-Note: For cooling, set the minimum threshold lower than target temperature.
-
-### Example 3: Dehumidification
+### Example 2: Dehumidification
 ```yaml
 Climate Entity: climate.bathroom_ac
 Temperature Sensor: sensor.bathroom_temperature
@@ -92,9 +77,9 @@ When room drops to 22.5°C, the AC turns on and is set to 26°C. The AC will hea
 - Set **AC Set Temperature** higher than **Target Temperature**
 - This ensures the AC heats effectively until the target is reached
 
-### For Cooling Mode
-- Set **AC Set Temperature** lower than **Minimum Temperature Threshold**
-- Reverse the logic: use high "minimum" and low "target" for cooling
+### For Heating Mode
+- Set **AC Set Temperature** higher than **Target Temperature**
+- This ensures the AC heats effectively until the target is reached
 
 ### For Best Results
 - Place temperature sensor away from the AC unit
